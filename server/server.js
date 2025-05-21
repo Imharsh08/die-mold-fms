@@ -1,7 +1,7 @@
-import express from 'express';
-import cors from 'cors';
-import db from './database';
-const app = express();
+const express = require('express');
+     const cors = require('cors');
+     const db = require('./database');
+     const app = express();
 
      app.use(cors());
      app.use(express.json());
@@ -13,8 +13,7 @@ const app = express();
          "Get Metal", "Programming & Machining", "VMC Inspection", "Sampling"
      ];
 
-     // Initialize FMS
-     app.post('/api/initialize', (_req, res) => {
+     app.post('/api/initialize', (req, res) => {
          db.run('DELETE FROM tasks', (err) => {
              if (err) return res.status(500).json({ error: err.message });
              db.run('DELETE FROM task_steps', (err) => {
@@ -27,7 +26,6 @@ const app = express();
          });
      });
 
-     // Add task
      app.post('/api/tasks', (req, res) => {
          const { order_id, tool_name, requested_by, priority, required_by, steps } = req.body;
          db.run(
@@ -52,7 +50,6 @@ const app = express();
          );
      });
 
-     // Mark step as done
      app.post('/api/task_steps/:taskId/:stepName', (req, res) => {
          const { taskId, stepName } = req.params;
          const actualDate = new Date().toISOString().split('T')[0];
@@ -78,8 +75,7 @@ const app = express();
          );
      });
 
-     // Get all tasks and steps
-     app.get('/api/tasks', (_req, res) => {
+     app.get('/api/tasks', (req, res) => {
          db.all(`SELECT * FROM tasks`, (err, tasks) => {
              if (err) return res.status(500).json({ error: err.message });
              db.all(`SELECT * FROM task_steps`, (err, steps) => {
@@ -93,8 +89,7 @@ const app = express();
          });
      });
 
-     // Check delay alerts
-     app.get('/api/check_delays', (_req, res) => {
+     app.get('/api/check_delays', (req, res) => {
          db.all(
              `SELECT t.order_id, ts.step_name, ts.planned_date
               FROM tasks t
@@ -124,9 +119,18 @@ const app = express();
                                  }
                              );
                          }
-                                     });
-                                     res.json({ alerts });
-                                 });
-                             }
-                         );
                      });
+                     res.json({ alertsSent: alerts.length });
+                 });
+             }
+         );
+     });
+
+     app.get('/api/email_log', (req, res) => {
+         db.all(`SELECT * FROM email_log`, (err, logs) => {
+             if (err) return res.status(500).json({ error: err.message });
+             res.json(logs);
+         });
+     });
+
+     app.listen(3000, () => console.log('Server running on http://localhost:3000'));
