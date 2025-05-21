@@ -134,3 +134,14 @@ const express = require('express');
      });
 
      app.listen(3000, () => console.log('Server running on http://localhost:3000'));
+
+
+    const sgMail = require('@sendgrid/mail');
+sgMail.setApiKey('YOUR_SENDGRID_API_KEY');
+// In check_delays, replace console.log with:
+sgMail.send({
+    to: 'your-email@example.com',
+    from: 'sender@example.com',
+    subject: `Delay Alert: ${step.step_name} delayed for Order ${step.order_id}`,
+    html: `Delay of ${(julianday('now') - julianday(step.planned_date)) * 24} hours...`
+});
