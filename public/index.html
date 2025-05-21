@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Die Mold FMS Mobile</title>
+    <title>Die Mold FMS</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body {
             font-size: 16px;
             touch-action: manipulation;
             margin: 0;
+            font-family: 'Inter', sans-serif;
         }
         button {
             -webkit-tap-highlight-color: transparent;
@@ -21,39 +23,84 @@
             background: linear-gradient(to right, #1e3a8a, #3b82f6);
         }
         .card {
-            transition: transform 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
         .card:hover {
             transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+        .priority-urgent { color: #dc2626; }
+        .priority-high { color: #f97316; }
+        .priority-medium { color: #eab308; }
+        .priority-low { color: #16a34a; }
+        .btn-primary {
+            background-color: #2563eb;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        @media (min-width: 768px) {
+            .container {
+                max-width: 1200px;
+            }
+            .task-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 1rem;
+            }
         }
     </style>
 </head>
-<body class="bg-gray-100 font-sans">
-    <!-- Fixed Header -->
+<body class="bg-gray-50">
+    <!-- Header -->
     <header class="header text-white p-4 shadow-lg fixed top-0 w-full z-10">
-        <h1 class="text-xl font-bold text-center">Die Mold FMS</h1>
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">Die Mold FMS</h1>
+            <div>
+                <span id="currentTime" class="text-sm"></span>
+            </div>
+        </div>
     </header>
 
     <!-- Main Content -->
-    <div class="container mx-auto p-4 max-w-md mt-16">
+    <div class="container mx-auto p-4 pt-20">
         <!-- Role Selection -->
-        <div class="mb-4">
-            <label for="userRole" class="block text-sm font-medium text-gray-700">Select Role:</label>
-            <select id="userRole" class="mt-1 block w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" onchange="toggleManagerFeatures()">
-                <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
-            </select>
+        <div class="mb-6 flex justify-center">
+            <div class="w-full md:w-1/3">
+                <label for="userRole" class="block text-sm font-medium text-gray-700 mb-1">Select Role:</label>
+                <select id="userRole" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" onchange="toggleManagerFeatures()">
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                </select>
+            </div>
         </div>
 
-        <!-- Initialize FMS Button -->
-        <div id="initFMS" class="mb-4 hidden">
-            <button onclick="initializeFMS()" class="w-full bg-blue-600 text-white p-3 rounded-lg shadow-md hover:bg-blue-700">Initialize Die Mold FMS</button>
+        <!-- Manager Controls -->
+        <div id="managerControls" class="mb-6 hidden">
+            <div class="flex flex-col md:flex-row gap-4">
+                <button onclick="initializeFMS()" class="btn-primary p-3 rounded-lg shadow-md flex items-center justify-center">
+                    <i class="fas fa-sync-alt mr-2"></i> Initialize FMS
+                </button>
+                <button onclick="downloadReport()" class="btn-secondary p-3 rounded-lg shadow-md flex items-center justify-center">
+                    <i class="fas fa-download mr-2"></i> Download Report
+                </button>
+            </div>
         </div>
 
         <!-- Add Task Form -->
-        <div id="addTaskForm" class="mb-6 hidden bg-white p-6 rounded-lg shadow-lg">
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">Add New Task</h2>
-            <div class="space-y-4">
+        <div id="addTaskForm" class="mb-8 hidden bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Add New Task</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input id="taskOrderId" type="text" placeholder="Order ID" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
                 <input id="taskToolName" type="text" placeholder="Tool/Item Name" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
                 <input id="taskRequestedBy" type="text" placeholder="Requested By" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
@@ -64,42 +111,60 @@
                     <option value="Urgent">Urgent</option>
                 </select>
                 <input id="taskRequiredBy" type="date" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
-                <div id="stepPlannedDates" class="space-y-3"></div>
-                <button onclick="addTask()" class="w-full bg-blue-600 text-white p-3 rounded-lg shadow-md hover:bg-blue-700">Add Task</button>
             </div>
+            <div class="mt-4">
+                <h3 class="text-md font-semibold mb-2 text-gray-800">Step Planned Dates</h3>
+                <div id="stepPlannedDates" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+            </div>
+            <button onclick="addTask()" class="mt-4 w-full btn-primary p-3 rounded-lg shadow-md">Add Task</button>
         </div>
 
         <!-- Check Delay Alerts -->
-        <div class="mb-4">
-            <button onclick="checkDelayAlerts()" class="w-full bg-yellow-500 text-white p-3 rounded-lg shadow-md hover:bg-yellow-600">Check Delay Alerts</button>
+        <div class="mb-6">
+            <button onclick="checkDelayAlerts()" class="w-full md:w-auto btn-primary p-3 rounded-lg shadow-md flex items-center justify-center">
+                <i class="fas fa-bell mr-2"></i> Check Delay Alerts
+            </button>
         </div>
 
         <!-- Pending Tasks -->
-        <div class="mb-6">
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">Pending Tasks (<span id="pendingCount">0</span>)</h2>
-            <div id="pendingTasks" class="space-y-4"></div>
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Pending Tasks (<span id="pendingCount">0</span>)</h2>
+            <div id="pendingTasks" class="task-grid"></div>
         </div>
 
         <!-- Top 5 Priority Tasks -->
-        <div class="mb-6">
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">Top 5 Priority Tasks</h2>
-            <div id="priorityTasks" class="space-y-4"></div>
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Top 5 Priority Tasks</h2>
+            <div id="priorityTasks" class="task-grid"></div>
         </div>
 
         <!-- Email Log -->
-        <div class="mb-6">
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">Email Log</h2>
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Email Log</h2>
             <div id="emailLog" class="bg-white p-4 rounded-lg shadow-lg overflow-x-auto"></div>
         </div>
 
-        <!-- Database Viewer -->
-        <div>
-            <h2 class="text-lg font-semibold mb-4 text-gray-800">Database Viewer</h2>
-            <button onclick="viewDatabase()" class="w-full bg-green-500 text-white p-3 rounded-lg shadow-md hover:bg-green-600 mb-4">View Database Data</button>
+        <!-- Database Viewer (Manager Only) -->
+        <div id="databaseViewerSection" class="mb-8 hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Database Viewer</h2>
+            <button onclick="viewDatabase()" class="w-full md:w-auto btn-primary p-3 rounded-lg shadow-md flex items-center justify-center mb-4">
+                <i class="fas fa-database mr-2"></i> View Database Data
+            </button>
             <div id="databaseViewer" class="bg-white p-4 rounded-lg shadow-lg"></div>
         </div>
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // Display current time in IST
+        function updateTime() {
+            const now = new Date();
+            const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+            const istTime = new Date(now.getTime() + istOffset);
+            document.getElementById('currentTime').textContent = istTime.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+    </script>
 </body>
 </html>

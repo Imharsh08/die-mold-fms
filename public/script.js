@@ -7,12 +7,16 @@ const priorityWeights = { Urgent: 4, High: 3, Medium: 2, Low: 1 };
 function toggleManagerFeatures() {
     const role = document.getElementById('userRole').value;
     document.getElementById('addTaskForm').classList.toggle('hidden', role !== 'manager');
-    document.getElementById('initFMS').classList.toggle('hidden', role !== 'manager');
+    document.getElementById('managerControls').classList.toggle('hidden', role !== 'manager');
+    document.getElementById('databaseViewerSection').classList.toggle('hidden', role !== 'manager');
 }
 
 function renderStepInputs() {
     document.getElementById('stepPlannedDates').innerHTML = STEPS.map(step => `
-        <input id="planned-${step.replace(/\s+/g, '-')}" type="date" placeholder="${step} - Planned" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">${step}</label>
+            <input id="planned-${step.replace(/\s+/g, '-')}" type="date" class="w-full p-3 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500" required>
+        </div>
     `).join('');
 }
 
@@ -86,6 +90,30 @@ async function markStepAsDone(taskId, step) {
     }
 }
 
+async function uploadFile(taskId, stepName) {
+    const fileInput = document.getElementById(`file-${taskId}-${stepName.replace(/\s+/g, '-')}`);
+    const file = fileInput.files[0];
+    if (!file) {
+        alert('Please select a file to upload.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch(`/api/upload/${taskId}/${encodeURIComponent(stepName)}`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        alert(result.message);
+        renderTasks();
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
+}
+
 async function checkDelayAlerts() {
     try {
         const response = await fetch('/api/check_delays');
@@ -101,6 +129,7 @@ async function renderTasks() {
     try {
         const response = await fetch('/api/tasks');
         const tasks = await response.json();
+        const isManager = document.getElementById('userRole').value === 'manager';
         const pendingTasks = tasks.filter(task => task.steps.some(s => s.status !== 'Done'));
         const pendingTasksDiv = document.getElementById('pendingTasks');
         const priorityTasksDiv = document.getElementById('priorityTasks');
@@ -108,54 +137,60 @@ async function renderTasks() {
 
         pendingCount.textContent = pendingTasks.length;
 
-        pendingTasksDiv.innerHTML = pendingTasks.map(task => `
+        const renderTaskCard = (task) => `
             <div class="bg-white p-4 rounded-lg shadow-md card">
                 <h3 class="text-lg font-semibold text-gray-800">Order ${task.order_id}: ${task.tool_name}</h3>
                 <p class="text-sm text-gray-600"><strong>Requested By:</strong> ${task.requested_by}</p>
-                <p class="text-sm text-gray-600"><strong>Priority:</strong> <span class="${task.priority === 'Urgent' ? 'text-red-500' : task.priority === 'High' ? 'text-orange-500' : 'text-gray-600'}">${task.priority}</span></p>
+                <p class="text-sm text-gray-600"><strong>Priority:</strong> <span class="priority-${task.priority.toLowerCase()}">${task.priority}</span></p>
                 <p class="text-sm text-gray-600"><strong>Required By:</strong> ${task.required_by}</p>
                 <p class="text-sm text-gray-600 mt-2"><strong>Steps:</strong></p>
                 <ul class="list-disc pl-5 text-sm text-gray-600">
                     ${STEPS.map(step => {
                         const stepData = task.steps.find(s => s.step_name === step);
+                        const files = task.files.filter(f => f.step_name === step);
                         return `
-                            <li>
+                            <li class="my-2">
                                 ${step}: ${stepData.status}
                                 ${stepData.planned_date ? `(Planned: ${stepData.planned_date})` : ''}
                                 ${stepData.actual_date ? `(Actual: ${stepData.actual_date})` : ''}
                                 ${stepData.time_delay !== null ? `(Delay: ${stepData.time_delay.toFixed(2)} hours)` : ''}
-                                ${stepData.status !== 'Done' ? `<button onclick="markStepAsDone(${task.id}, '${step}')" class="ml-2 text-blue-500 hover:underline text-sm p-1">Mark Done</button>` : ''}
+                                ${stepData.status !== 'Done' ? `
+                                    <button onclick="markStepAsDone(${task.id}, '${step}')" class="ml-2 btn-primary px-3 py-1 rounded-lg text-sm">
+                                        <i class="fas fa-check mr-1"></i> Mark Done
+                                    </button>
+                                ` : ''}
+                                ${isManager ? `
+                                    <div class="mt-2">
+                                        <input type="file" id="file-${task.id}-${step.replace(/\s+/g, '-')}" class="text-sm">
+                                        <button onclick="uploadFile(${task.id}, '${step}')" class="mt-1 btn-primary px-3 py-1 rounded-lg text-sm">
+                                            <i class="fas fa-upload mr-1"></i> Upload File
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                ${files.length > 0 ? `
+                                    <div class="mt-2">
+                                        <p class="text-sm font-medium">Files:</p>
+                                        <ul class="list-disc pl-5 text-sm">
+                                            ${files.map(file => `
+                                                <li>
+                                                    <a href="/api/file/${file.id}" class="text-blue-500 hover:underline" download>${file.file_name}</a>
+                                                    (Uploaded: ${new Date(file.uploaded_at).toLocaleString()})
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
                             </li>
                         `;
                     }).join('')}
                 </ul>
             </div>
-        `).join('');
+        `;
+
+        pendingTasksDiv.innerHTML = pendingTasks.map(renderTaskCard).join('');
 
         const sortedTasks = [...pendingTasks].sort((a, b) => priorityWeights[b.priority] - priorityWeights[a.priority]);
-        priorityTasksDiv.innerHTML = sortedTasks.slice(0, 5).map(task => `
-            <div class="bg-white p-4 rounded-lg shadow-md card">
-                <h3 class="text-lg font-semibold text-gray-800">Order ${task.order_id}: ${task.tool_name}</h3>
-                <p class="text-sm text-gray-600"><strong>Requested By:</strong> ${task.requested_by}</p>
-                <p class="text-sm text-gray-600"><strong>Priority:</strong> <span class="${task.priority === 'Urgent' ? 'text-red-500' : task.priority === 'High' ? 'text-orange-500' : 'text-gray-600'}">${task.priority}</span></p>
-                <p class="text-sm text-gray-600"><strong>Required By:</strong> ${task.required_by}</p>
-                <p class="text-sm text-gray-600 mt-2"><strong>Steps:</strong></p>
-                <ul class="list-disc pl-5 text-sm text-gray-600">
-                    ${STEPS.map(step => {
-                        const stepData = task.steps.find(s => s.step_name === step);
-                        return `
-                            <li>
-                                ${step}: ${stepData.status}
-                                ${stepData.planned_date ? `(Planned: ${stepData.planned_date})` : ''}
-                                ${stepData.actual_date ? `(Actual: ${stepData.actual_date})` : ''}
-                                ${stepData.time_delay !== null ? `(Delay: ${stepData.time_delay.toFixed(2)} hours)` : ''}
-                                ${stepData.status !== 'Done' ? `<button onclick="markStepAsDone(${task.id}, '${step}')" class="ml-2 text-blue-500 hover:underline text-sm p-1">Mark Done</button>` : ''}
-                            </li>
-                        `;
-                    }).join('')}
-                </ul>
-            </div>
-        `).join('');
+        priorityTasksDiv.innerHTML = sortedTasks.slice(0, 5).map(renderTaskCard).join('');
     } catch (err) {
         alert(`Error: ${err.message}`);
     }
@@ -271,6 +306,14 @@ async function viewDatabase() {
     } catch (err) {
         alert(`Error: ${err.message}`);
     }
+}
+
+function downloadReport() {
+    if (document.getElementById('userRole').value !== 'manager') {
+        alert('Only managers can download reports.');
+        return;
+    }
+    window.location.href = '/api/report';
 }
 
 function clearForm() {

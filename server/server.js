@@ -2,10 +2,16 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./database');
 const app = express();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static('../public'));
+
+// Configure multer for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
 
 const ALERT_THRESHOLD_HOURS = 48;
 const STEPS = [
@@ -20,7 +26,10 @@ app.post('/api/initialize', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
             db.run('DELETE FROM email_log', (err) => {
                 if (err) return res.status(500).json({ error: err.message });
-                res.json({ message: 'FMS Initialized Successfully' });
+                db.run('DELETE FROM task_files', (err) => {
+                    if (err) return res.status(500).json({ error: err.message });
+                    res.json({ message: 'FMS Initialized Successfully' });
+                });
             });
         });
     });
@@ -80,11 +89,15 @@ app.get('/api/tasks', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         db.all(`SELECT * FROM task_steps`, (err, steps) => {
             if (err) return res.status(500).json({ error: err.message });
-            const tasksWithSteps = tasks.map(task => ({
-                ...task,
-                steps: steps.filter(step => step.task_id === task.id)
-            }));
-            res.json(tasksWithSteps);
+            db.all(`SELECT id, task_id, step_name, file_name, uploaded_at FROM task_files`, (err, files) => {
+                if (err) return res.status(500).json({ error: err.message });
+                const tasksWithSteps = tasks.map(task => ({
+                    ...task,
+                    steps: steps.filter(step => step.task_id === task.id),
+                    files: files.filter(file => file.task_id === task.id)
+                }));
+                res.json(tasksWithSteps);
+            });
         });
     });
 });
@@ -130,6 +143,71 @@ app.get('/api/email_log', (req, res) => {
     db.all(`SELECT * FROM email_log`, (err, logs) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(logs);
+    });
+});
+
+app.post('/api/upload/:taskId/:stepName', upload.single('file'), (req, res) => {
+    const { taskId, stepName } = req.params;
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    db.run(
+        `INSERT INTO task_files (task_id, step_name, file_name, file_data, uploaded_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [taskId, stepName, file.originalname, file.buffer, new Date().toISOString()],
+        (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ message: 'File uploaded successfully' });
+        }
+    );
+});
+
+app.get('/api/file/:fileId', (req, res) => {
+    const { fileId } = req.params;
+    db.get(`SELECT file_name, file_data FROM task_files WHERE id = ?`, [fileId], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: 'File not found' });
+        res.setHeader('Content-Disposition', `attachment; filename="${row.file_name}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(row.file_data);
+    });
+});
+
+app.get('/api/report', (req, res) => {
+    db.all(`SELECT * FROM tasks`, (err, tasks) => {
+        if (err) return res.status(500).json({ error: err.message });
+        db.all(`SELECT * FROM task_steps`, (err, steps) => {
+            if (err) return res.status(500).json({ error: err.message });
+            db.all(`SELECT id, task_id, step_name, file_name, uploaded_at FROM task_files`, (err, files) => {
+                if (err) return res.status(500).json({ error: err.message });
+                const tasksWithSteps = tasks.map(task => ({
+                    ...task,
+                    steps: steps.filter(step => step.task_id === task.id),
+                    files: files.filter(file => file.task_id === task.id)
+                }));
+
+                const csv = [
+                    'Order ID,Tool Name,Requested By,Priority,Required By,Step Name,Status,Planned Date,Actual Date,Time Delay,Files',
+                    ...tasksWithSteps.flatMap(task => task.steps.map(step => [
+                        task.order_id,
+                        task.tool_name,
+                        task.requested_by,
+                        task.priority,
+                        task.required_by,
+                        step.step_name,
+                        step.status,
+                        step.planned_date || '',
+                        step.actual_date || '',
+                        step.time_delay !== null ? step.time_delay.toFixed(2) : '',
+                        task.files.filter(file => file.step_name === step.step_name).map(file => file.file_name).join(';')
+                    ].map(val => `"${val}"`).join(',')))
+                ].join('\n');
+
+                res.setHeader('Content-Disposition', 'attachment; filename="task_report.csv"');
+                res.setHeader('Content-Type', 'text/csv');
+                res.send(csv);
+            });
+        });
     });
 });
 
